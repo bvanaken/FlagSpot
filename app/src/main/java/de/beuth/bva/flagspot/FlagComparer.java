@@ -3,6 +3,10 @@ package de.beuth.bva.flagspot;
 import android.content.Context;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.util.Log;
+
+import org.apache.commons.math3.util.MathArrays;
 
 import java.io.InputStream;
 import java.io.ObjectInputStream;
@@ -18,64 +22,69 @@ public class FlagComparer {
 
     private static final String TAG = "FlagComparer";
 
-    static List<Flag> flags;
-    static Flag compareFlag;
+    final static int PIXEL_MARGIN = 10;
 
-    public static void compareFlag(Context context, Bitmap flagImg) {
+    final static int SAMPLES_X = 20;
+    final static int SAMPLES_Y = 20;
+
+    final static int DISTANCE_THRESHOLD = 3000;
+
+    List<Flag> flags;
+
+    public FlagComparer(Context context) {
         if (flags == null) {
             setupFlagList(context);
         }
-
-        compareFlag = new Flag();
-        compareFlag.setName("Scanned Flag");
-        compareFlag = FlagIdentifier.fillFlagColors(flagImg, compareFlag, 200);
-
-        compareWithFlagList();
     }
 
-    private static void compareWithFlagList() {
+    public void compareFlag(Bitmap flagImg) {
 
-        List<Flag> matches = new ArrayList<>();
-
-        int arrayChecks = 0;
-        int noArrayChecks = 0;
+        double[] testVector = getVectorForImage(flagImg, SAMPLES_X, SAMPLES_Y);
+        double shortestDistance = Double.MAX_VALUE;
+        String nearestFlag = null;
 
         for (Flag flag : flags) {
-            if (compareFlag.hasEqualValues(flag, 200)) {
-                matches.add(flag);
+            double distance = MathArrays.distance(flag.getVector(), testVector);
+            if(distance < shortestDistance){
+                shortestDistance = distance;
+                nearestFlag = flag.getName();
+            }
+            if(distance < DISTANCE_THRESHOLD){
+                Log.d(TAG, flag.getName() + ": " + distance);
             }
         }
-        arrayChecks += compareFlag.neededArrayCheck;
-        noArrayChecks += compareFlag.didntNeedArrayCheck;
 
-        System.out.println(arrayChecks + " array checks. " + noArrayChecks + " without.");
+        Log.d(TAG, "-----");
+        Log.d(TAG, nearestFlag + ": " + shortestDistance);
 
-        sortListByColorDistance(matches, compareFlag);
-        for (Flag flagMatch : matches) {
-            System.out.println(compareFlag.getName() + " has equal values as " + flagMatch.getName());
-        }
     }
 
-    private static List<Flag> sortListByColorDistance(List<Flag> list, final Flag compareFlag) {
+    private double[] getVectorForImage(Bitmap img, int samplesX, int samplesY) {
 
-        Collections.sort(list, new Comparator<Flag>() {
-            @Override
-            public int compare(Flag f1, Flag f2) {
-                double averageDist1 = f1.averageColorDistanceToFlag(compareFlag);
-                double averageDist2 = f2.averageColorDistanceToFlag(compareFlag);
+        int stepsWidth = (int) Math.floor(((img.getWidth() - PIXEL_MARGIN * 2.0)/ (samplesX-1)));
+        int stepsHeight = (int) Math.floor((img.getHeight() - PIXEL_MARGIN * 2.0)/ (samplesY-1));
+        int channels = 3;
 
-                return averageDist1 > averageDist2 ? 1 : (averageDist2 > averageDist1) ? -1 : 0;
+        double[] vector = new double[samplesX * samplesY * 3];
+
+        for (int i = 0; i < samplesY; i++) {
+            for (int j = 0; j < samplesX; j++) {
+
+                int color = img.getPixel(stepsWidth * i, stepsHeight * j);
+
+                vector[i * samplesX * channels + j * channels] = Color.red(color);
+                vector[i * samplesX * channels + j * channels + 1] = Color.green(color);
+                vector[i * samplesX * channels + j * channels + 2] = Color.blue(color);
             }
-        });
-
-        return list;
+        }
+        return vector;
     }
 
-    private static void setupFlagList(Context context) {
+    private void setupFlagList(Context context) {
         try {
             // Deserialize an List<Flag> Object
             AssetManager assetManager = context.getAssets();
-            InputStream fileIn = assetManager.open("flags.txt");
+            InputStream fileIn = assetManager.open("flags.csv");
 
             ObjectInputStream in = new ObjectInputStream(fileIn);
             flags = (List<Flag>) in.readObject();

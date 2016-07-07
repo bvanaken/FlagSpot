@@ -1,5 +1,6 @@
 package de.beuth.bva.flagspot;
 
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
@@ -15,10 +16,12 @@ import org.opencv.android.JavaCameraView;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
+import org.opencv.core.CvType;
 import org.opencv.core.DMatch;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfDMatch;
 import org.opencv.core.MatOfKeyPoint;
+import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.features2d.DescriptorExtractor;
 import org.opencv.features2d.DescriptorMatcher;
@@ -34,20 +37,14 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     private CameraBridgeViewBase mOpenCvCameraView;
 
-    FeatureDetector featureDetector;
-    DescriptorExtractor featureDescriptor;
-
-    List<Flag> flags;
+    FlagComparer flagComparer;
 
     //    Mat compareObject;
     Mat currentFrame;
 
-    List<Mat> objectDescriptors = new ArrayList<>();
-
     private static final String TAG = "MainActivity";
 
     static {
-        // If you use opencv 2.4, System.loadLibrary("opencv_java")
         System.loadLibrary("opencv_java3");
     }
 
@@ -77,38 +74,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-//        setContentView(R.layout.activity_main);
-//        ButterKnife.bind(this);
-
-        Log.d(TAG, "Creating and setting view");
         mOpenCvCameraView = new JavaCameraView(this, -1);
         setContentView(mOpenCvCameraView);
         mOpenCvCameraView.setVisibility(CameraBridgeViewBase.VISIBLE);
         mOpenCvCameraView.setCvCameraViewListener(this);
 
-        featureDetector = FeatureDetector.create(FeatureDetector.ORB);
-        featureDescriptor = DescriptorExtractor.create(DescriptorExtractor.ORB);
+        flagComparer = new FlagComparer(this);
 
-    }
-
-    private void createDescriptors(int objectRessource) {
-
-        try {
-            Mat compareObject = Utils.loadResource(this, objectRessource);
-
-            // object feature detection
-            MatOfKeyPoint objectKeypoints = new MatOfKeyPoint();
-            featureDetector.detect(compareObject, objectKeypoints);
-
-            // object feature description
-            Mat objectDescriptorSet = new Mat();
-            featureDescriptor.compute(compareObject, objectKeypoints, objectDescriptorSet);
-
-            objectDescriptors.add(objectDescriptorSet);
-
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 
     @Override
@@ -158,65 +130,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         return super.onOptionsItemSelected(item);
     }
 
-    private void deserialize() {
-
-
-    }
-
-    private void compare(Mat inputFrame) {
-
-        // frame feature detection
-        MatOfKeyPoint frameKeypoints = new MatOfKeyPoint();
-        featureDetector.detect(inputFrame, frameKeypoints);
-
-        // frame feature description
-        Mat frameDescriptors = new Mat();
-        featureDescriptor.compute(inputFrame, frameKeypoints, frameDescriptors);
-
-        //match frame and object descriptors
-        MatOfDMatch matches = new MatOfDMatch();
-
-        DescriptorMatcher matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING);
-
-        int bestIndex = -1;
-        int maxMatches = 0;
-        for (Mat objectDescriptorSet : objectDescriptors) {
-            if (frameDescriptors.type() == objectDescriptorSet.type() && frameDescriptors.cols() == objectDescriptorSet.cols()) {
-
-                matcher.match(frameDescriptors, objectDescriptorSet, matches);
-
-                int matchesUnderThreshold = matchesUnderThreshold(matches, 60);
-                if (matchesUnderThreshold > maxMatches) {
-                    bestIndex = objectDescriptors.indexOf(objectDescriptorSet);
-                    maxMatches = matchesUnderThreshold;
-                }
-            }
-        }
-        Log.d(TAG, "compare: bestIndex: " + bestIndex + " with " + maxMatches + " matches.");
-
-    }
-
-    private int matchesUnderThreshold(MatOfDMatch matches, int threshold) {
-        List<DMatch> myList = matches.toList();
-        Iterator itr = myList.iterator();
-        float sum = 0;
-        int underThreshold = 0;
-        while (itr.hasNext()) {
-            DMatch element = (DMatch) itr.next();
-            Log.d(TAG, "compare: matchesUnderThreshold: " + element.distance);
-
-            if (element.distance < threshold) {
-//                sum += element.distance;
-                underThreshold++;
-            }
-        }
-//        Log.d(TAG, "compare: size: " + myList.size());
-//        if(underThreshold != 0){
-//            Log.d(TAG, "compare: average: " + (sum/underThreshold));
-//        }
-        return underThreshold;
-    }
-
     @Override
     public void onCameraViewStarted(int width, int height) {
 
@@ -231,27 +144,25 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     public Mat onCameraFrame(Mat inputFrame) {
         currentFrame = inputFrame;
 
-        Mat resizeimage = new Mat();
+//        Mat resizeimage = new Mat();
 //        Size sz = new Size(200,113);
 //        Imgproc.resize( inputFrame, resizeimage, sz );
 
-        Imgproc.GaussianBlur(inputFrame, resizeimage, new org.opencv.core.Size (5,5), 2.2, 2);
-
-        return resizeimage;
+        return inputFrame;
     }
 
     @Override
     public boolean onTouch(View v, MotionEvent event) {
-//        if (currentFrame != null) {
-//
-//            // Create empty Mat with
-//            Mat tmp = new Mat(0, 0, CvType.CV_8U, new Scalar(4));
-//            Imgproc.cvtColor(currentFrame, tmp, Imgproc.COLOR_RGBA2RGB, 4);
-//
-//            Bitmap bmp = Bitmap.createBitmap(tmp.cols(), tmp.rows(), Bitmap.Config.ARGB_8888);
-//            Utils.matToBitmap(tmp, bmp);
-//            FlagComparer.compareFlag(this, bmp);
-//        }
+        if (currentFrame != null) {
+
+            // Create empty Mat with
+            Mat tmp = new Mat(0, 0, CvType.CV_8U, new Scalar(4));
+            Imgproc.cvtColor(currentFrame, tmp, Imgproc.COLOR_RGBA2RGB, 4);
+
+            Bitmap bmp = Bitmap.createBitmap(tmp.cols(), tmp.rows(), Bitmap.Config.ARGB_8888);
+            Utils.matToBitmap(tmp, bmp);
+            flagComparer.compareFlag(bmp);
+        }
         return false;
     }
 }
