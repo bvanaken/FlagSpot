@@ -10,9 +10,6 @@ import org.apache.commons.math3.util.MathArrays;
 
 import java.io.InputStream;
 import java.io.ObjectInputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -37,33 +34,43 @@ public class FlagComparer {
         }
     }
 
-    public void compareFlag(Bitmap flagImg) {
+    public String compareFlag(Bitmap flagImg) {
 
         double[] testVector = getVectorForImage(flagImg, SAMPLES_X, SAMPLES_Y);
-        double shortestDistance = Double.MAX_VALUE;
-        String nearestFlag = null;
+        if (testVector != null) {
 
-        for (Flag flag : flags) {
-            double distance = MathArrays.distance(flag.getVector(), testVector);
-            if(distance < shortestDistance){
-                shortestDistance = distance;
-                nearestFlag = flag.getName();
+            double shortestDistance = Double.MAX_VALUE;
+            String nearestFlag = null;
+
+            for (Flag flag : flags) {
+                double distance = MathArrays.distance(flag.getVector(), testVector);
+                if (distance < shortestDistance) {
+                    shortestDistance = distance;
+                    nearestFlag = flag.getName();
+                }
+                if (distance < DISTANCE_THRESHOLD) {
+                    Log.d(TAG, flag.getName() + ": " + distance);
+                }
             }
-            if(distance < DISTANCE_THRESHOLD){
-                Log.d(TAG, flag.getName() + ": " + distance);
-            }
+
+            Log.d(TAG, "-----");
+            Log.d(TAG, nearestFlag + ": " + shortestDistance);
+
+            return nearestFlag;
         }
 
-        Log.d(TAG, "-----");
-        Log.d(TAG, nearestFlag + ": " + shortestDistance);
-
+        return null;
     }
 
     private double[] getVectorForImage(Bitmap img, int samplesX, int samplesY) {
 
-        int stepsWidth = (int) Math.floor(((img.getWidth() - PIXEL_MARGIN * 2.0)/ (samplesX-1)));
-        int stepsHeight = (int) Math.floor((img.getHeight() - PIXEL_MARGIN * 2.0)/ (samplesY-1));
+        int stepsWidth = (int) Math.floor(((img.getWidth() - PIXEL_MARGIN * 2.0) / (samplesX - 1)));
+        int stepsHeight = (int) Math.floor((img.getHeight() - PIXEL_MARGIN * 2.0) / (samplesY - 1));
         int channels = 3;
+
+        if (stepsWidth < 0 || stepsHeight < 0) {
+            return null;
+        }
 
         double[] vector = new double[samplesX * samplesY * 3];
 
@@ -82,7 +89,7 @@ public class FlagComparer {
 
     private void setupFlagList(Context context) {
         try {
-            // Deserialize an List<Flag> Object
+            // Deserialize List<Flag> Object
             AssetManager assetManager = context.getAssets();
             InputStream fileIn = assetManager.open("flags.csv");
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="countryname_textview" type="id" />
+    <item name="preview_imageview" type="id" />
+    <item name="dragrect_view" type="id" />
+    <item name="opencv_cameraview" type="id" />
+</resources>
