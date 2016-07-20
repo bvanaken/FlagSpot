@@ -1,10 +1,9 @@
 package de.beuth.bva.flagspot;
 
 import android.app.ProgressDialog;
+import android.content.DialogInterface;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Color;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
@@ -22,43 +21,42 @@ import org.opencv.android.JavaCameraView;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
-import org.opencv.calib3d.Calib3d;
-import org.opencv.core.Core;
 import org.opencv.core.CvType;
-import org.opencv.core.DMatch;
-import org.opencv.core.KeyPoint;
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfDMatch;
-import org.opencv.core.MatOfKeyPoint;
-import org.opencv.core.MatOfPoint2f;
-import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
-import org.opencv.features2d.DescriptorExtractor;
-import org.opencv.features2d.DescriptorMatcher;
-import org.opencv.features2d.FeatureDetector;
-import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
-import java.util.LinkedList;
-import java.util.List;
+import de.beuth.bva.flagspot.flaglogic.FlagComparer;
+import de.beuth.bva.flagspot.imgprocessing.GrabCutter;
+import de.beuth.bva.flagspot.rest.RestCountryProvider;
+import de.beuth.bva.flagspot.views.DrawPathView;
+import de.beuth.bva.flagspot.views.DrawRectView;
 
-public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener {
+public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener, GrabCutter.GrabCutListener {
 
     private static final String TAG = "MainActivity";
 
     private RelativeLayout layout;
     private CameraBridgeViewBase openCvCameraView;
     private TextView countryNameTextView;
+    private TextView titleTextView;
+    private TextView toggleTextView;
     private ImageView previewImgView;
-    //    private DragRectView dragRectView;
-    private DrawPathView dragRectView;
+
+    private DrawRectView drawRectView;
+    private DrawPathView drawPathView;
+
     ProgressDialog progressDialog;
+    boolean inRectMode = true;
 
     private FlagComparer flagComparer;
+    private GrabCutter grabCutter;
     private Mat currentFrame;
     private Mat selectedRegion;
+
+    private RestCountryProvider restCountryProvider;
 
     static {
         System.loadLibrary("opencv_java3");
@@ -92,6 +90,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         // Initialize comparer (which will load list of flags)
         flagComparer = new FlagComparer(this);
+
+        // setup REST provider for country informations
+        restCountryProvider = new RestCountryProvider(this);
 
         setupViews();
     }
@@ -158,7 +159,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     public Mat onCameraFrame(Mat inputFrame) {
 
         currentFrame = inputFrame;
-        dragRectView.setDimensions(inputFrame.rows(), inputFrame.cols());
+        if (!inRectMode) {
+            drawPathView.setDimensions(inputFrame.rows(), inputFrame.cols());
+        }
 
         if (currentFrame != null && selectedRegion != null) {
 //            findHomography(selectedRegion, currentFrame);
@@ -168,6 +171,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     }
 
     private void setupViews() {
+        // The view setup needs to be programmatically right now, because JavaCameraView cannot be added by xml
+        // But because it must be at the very back of all views, the others need to be added afterwards
+        // z-depth is not available at the supported min android version
 
         // Base layout
         layout = (RelativeLayout) findViewById(R.id.main_relative_layout);
@@ -195,58 +201,129 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         previewImgView = new ImageView(this);
         previewImgView.setId(R.id.preview_imageview);
 
-        RelativeLayout.LayoutParams imageParams = new RelativeLayout.LayoutParams(300, 300);
-//        RelativeLayout.LayoutParams imageParams = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        RelativeLayout.LayoutParams imageParams = new RelativeLayout.LayoutParams(600, 600);
         imageParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
         imageParams.setMargins(0, 0, 20, 0);
         layout.addView(previewImgView, imageParams);
 
-        // Setup drag rect view
-//        dragRectView = new DragRectView(this);
-        dragRectView = new DrawPathView(this);
-        dragRectView.setId(R.id.dragrect_view);
+        // Setup draw rect view
+        drawRectView = new DrawRectView(this);
+        drawRectView.setId(R.id.drawrect_view);
 
-        RelativeLayout.LayoutParams dragParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT);
-        layout.addView(dragRectView, dragParams);
+        RelativeLayout.LayoutParams drawRectParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT);
+        layout.addView(drawRectView, drawRectParams);
 
-//        dragRectView.setOnUpCallback(new DragRectView.OnUpCallback() {
-//            @Override
-//            public void onRectFinished(final Rect rect) {
-//                onRegionSelected(rect);
-//            }
-//        });
+        drawRectView.setOnUpCallback(new DrawRectView.OnUpCallback() {
+            @Override
+            public void onRectFinished(final Rect rect) {
+                onRegionSelected(rect);
+            }
+        });
 
-        dragRectView.setOnUpCallback(new DrawPathView.OnUpCallback() {
+        // Setup draw path view (dont add this one right now)
+        drawPathView = new DrawPathView(this);
+        drawRectView.setId(R.id.drawpath_view);
+
+        drawPathView.setOnUpCallback(new DrawPathView.OnUpCallback() {
             @Override
             public void onPathFinished(final Mat mask) {
                 onRegionSelected(mask);
             }
         });
 
+        // Setup title view
+        titleTextView = new TextView(this);
+        titleTextView.setId(R.id.title_textview);
+        titleTextView.setTextColor(Color.WHITE);
+        titleTextView.setBackgroundColor(Color.rgb(100, 150, 250));
+        titleTextView.setText("FlagSpot");
+        titleTextView.setPadding(10, 5, 0, 5);
+
+        RelativeLayout.LayoutParams titleParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+        layout.addView(titleTextView, titleParams);
+
+        // Setup toggle mode view
+        toggleTextView = new TextView(this);
+        toggleTextView.setId(R.id.toggle_textview);
+        toggleTextView.setTextColor(Color.WHITE);
+        toggleTextView.setBackgroundColor(Color.rgb(100, 150, 250));
+        toggleTextView.setText("Rect Mode");
+        titleTextView.setPadding(0, 5, 10, 5);
+
+        RelativeLayout.LayoutParams toggleParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+        toggleParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+        layout.addView(toggleTextView, toggleParams);
+
+        toggleTextView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleSelectionMode();
+            }
+        });
+    }
+
+    private void toggleSelectionMode() {
+
+        // Remove text views
+        layout.removeView(toggleTextView);
+        layout.removeView(titleTextView);
+
+        // Change between rect or path view
+        if (inRectMode) {
+            layout.removeView(drawRectView);
+            RelativeLayout.LayoutParams drawPathParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT);
+            layout.addView(drawPathView, drawPathParams);
+            toggleTextView.setText("GrabCut Mode");
+        } else {
+
+            // be sure the grabcut task is not running anymore
+            grabCutter.cancelGrabCut();
+            grabCutFinished(null);
+
+            layout.removeView(drawPathView);
+            RelativeLayout.LayoutParams drawPathParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT);
+            layout.addView(drawRectView, drawPathParams);
+            toggleTextView.setText("Rect Mode");
+        }
+
+        // Readd text views
+        RelativeLayout.LayoutParams titleParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+        layout.addView(titleTextView, titleParams);
+
+        RelativeLayout.LayoutParams toggleParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+        toggleParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+        layout.addView(toggleTextView, toggleParams);
+
+        inRectMode = !inRectMode;
     }
 
     private void onRegionSelected(Rect rect) {
-        if (currentFrame != null && rect.width > 0 && rect.height > 0) {
+        if (currentFrame != null && rect.width > 30 && rect.height > 30) {
             // Cut out rectangle from input Mat
             Mat newlySelectedRegion = currentFrame.submat(rect);
             selectedRegion = newlySelectedRegion;
 
-            processCapturedImage(newlySelectedRegion);
+            processCapturedRect(newlySelectedRegion);
         }
     }
 
     private void onRegionSelected(Mat mask) {
         if (currentFrame != null && mask != null && !mask.empty()) {
+
+            // To be sure not to pass the Mats by reference, copy them first
             Mat copiedFrame = new Mat();
             Mat copiedMask = new Mat();
+
             currentFrame.copyTo(copiedFrame);
             mask.copyTo(copiedMask);
-            new GrabCutTask().execute(copiedFrame, copiedMask);
-//            applyGrabCut(currentFrame, mask);
+
+            // Start the grabCut algorithm
+            grabCutter = new GrabCutter(this);
+            grabCutter.startGrabCut(copiedFrame, copiedMask);
         }
     }
 
-    private void processCapturedImage(Mat image) {
+    private void processCapturedRect(Mat image) {
 
         if (currentFrame != null) {
 
@@ -270,140 +347,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             }
         }
 
-    }
-
-    private void findHomography(Mat imgObject, Mat scene) {
-
-        FeatureDetector detector = FeatureDetector.create(FeatureDetector.ORB);
-
-        MatOfKeyPoint keypointsObject = new MatOfKeyPoint();
-        MatOfKeyPoint keypointsScene = new MatOfKeyPoint();
-
-        detector.detect(imgObject, keypointsObject);
-        detector.detect(scene, keypointsScene);
-
-        DescriptorExtractor extractor = DescriptorExtractor.create(DescriptorExtractor.ORB);
-
-        Mat descriptorObject = new Mat();
-        Mat descriptorScene = new Mat();
-
-        extractor.compute(imgObject, keypointsObject, descriptorObject);
-        extractor.compute(scene, keypointsScene, descriptorScene);
-
-        DescriptorMatcher matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING);
-        MatOfDMatch matches = new MatOfDMatch();
-
-        // Check for equal columns (sometimes they dont match)
-        if (descriptorObject.cols() == descriptorScene.cols()) {
-
-            // Find matches
-            matcher.match(descriptorObject, descriptorScene, matches);
-            List<DMatch> matchesList = matches.toList();
-
-            Double max_dist = 0.0;
-            Double min_dist = 100.0;
-
-            for (int i = 0; i < descriptorObject.rows(); i++) {
-                Double dist = (double) matchesList.get(i).distance;
-                if (dist < min_dist) min_dist = dist;
-                if (dist > max_dist) max_dist = dist;
-            }
-
-            System.out.println("-- Max dist : " + max_dist);
-            System.out.println("-- Min dist : " + min_dist);
-
-            LinkedList<DMatch> goodMatchesList = new LinkedList<>();
-
-            for (int i = 0; i < descriptorObject.rows(); i++) {
-                if (matchesList.get(i).distance < 1 * min_dist) {
-                    goodMatchesList.addLast(matchesList.get(i));
-                }
-            }
-
-            MatOfDMatch goodMatches = new MatOfDMatch();
-            goodMatches.fromList(goodMatchesList);
-
-            LinkedList<Point> objList = new LinkedList<>();
-            LinkedList<Point> sceneList = new LinkedList<>();
-
-            List<KeyPoint> keypointsObjectList = keypointsObject.toList();
-            List<KeyPoint> keypointsSceneList = keypointsScene.toList();
-
-            for (int i = 0; i < goodMatchesList.size(); i++) {
-                objList.addLast(keypointsObjectList.get(goodMatchesList.get(i).queryIdx).pt);
-                sceneList.addLast(keypointsSceneList.get(goodMatchesList.get(i).trainIdx).pt);
-            }
-
-            MatOfPoint2f pointsObject = new MatOfPoint2f();
-            pointsObject.fromList(objList);
-
-            MatOfPoint2f pointsScene = new MatOfPoint2f();
-            pointsScene.fromList(sceneList);
-
-            if (!pointsObject.empty() && !pointsScene.empty()) {
-                Mat H = Calib3d.findHomography(pointsObject, pointsScene);
-
-                Mat objCorners = new Mat(4, 1, CvType.CV_32FC2);
-                Mat sceneCorners = new Mat(4, 1, CvType.CV_32FC2);
-
-                objCorners.put(0, 0, new double[]{0, 0});
-                objCorners.put(1, 0, new double[]{imgObject.cols(), 0});
-                objCorners.put(2, 0, new double[]{imgObject.cols(), imgObject.rows()});
-                objCorners.put(3, 0, new double[]{0, imgObject.rows()});
-
-                if (!H.empty()) {
-                    Core.perspectiveTransform(objCorners, sceneCorners, H);
-
-                    for (int i = 0; i < sceneCorners.rows(); i++) {
-                        for (int j = 0; j < sceneCorners.cols(); j++) {
-                            Log.d(TAG, "i: " + i + ",j: " + j);
-                            for (double val : sceneCorners.get(i, j)) {
-                                Log.d(TAG, val + ",");
-                            }
-                        }
-                    }
-
-                    final float[] cornerValues = new float[]{
-                            (float) sceneCorners.get(0, 0)[0], (float) sceneCorners.get(0, 0)[1],
-                            (float) sceneCorners.get(1, 0)[0], (float) sceneCorners.get(1, 0)[1],
-                            (float) sceneCorners.get(2, 0)[0], (float) sceneCorners.get(2, 0)[1],
-                            (float) sceneCorners.get(3, 0)[0], (float) sceneCorners.get(3, 0)[1]
-                    };
-
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-//                            previewImgView.setCornerValues(cornerValues);
-                        }
-                    });
-
-                    Log.d(TAG, "findHomography: found something");
-
-//                    Imgproc.warpPerspective(imgObject,
-//                            imgObject,
-//                            H,
-//                            new Size(900, 600),
-//                            Imgproc.INTER_CUBIC);
-//
-//                    final Bitmap output = Bitmap.createBitmap(900, 600, Bitmap.Config.RGB_565);
-//                    Utils.matToBitmap(imgObject, output);
-//
-//                    // Set into preview
-//                    runOnUiThread(new Runnable() {
-//                        @Override
-//                        public void run() {
-//                            previewImgView.setImageBitmap(output);
-//                        }
-//                    });
-
-                } else {
-                    Log.d(TAG, "findHomography: H was empty");
-                }
-            }
-
-        } else {
-            Log.d(TAG, "findHomography: Cols wasnt equal.");
-        }
     }
 
     private Mat displayLines(Mat sampledImage) {
@@ -441,90 +384,36 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     }
 
-    private Mat applyGrabCut(Mat img, Mat mask) {
+    // GRABCUT Callbacks
 
-        // Convert current frame image from RGBA to RGB
-        Mat rgbImage = new Mat(0, 0, CvType.CV_8UC3, new Scalar(3));
-        Imgproc.cvtColor(img, rgbImage, Imgproc.COLOR_RGBA2RGB, 3);
-
-        // fill an inner rectangle in the mask with 'possible foreground values' to evaluate it
-        for (int i = 40; i < rgbImage.height() - 40; i++) {
-            for (int j = 40; j < rgbImage.width() - 40; j++) {
-
-                if(mask.get(i, j) == null){
-                    Log.d(TAG, "applyGrabCut: pixel val is null: " + i + ", " + j);
-                    continue;
-                }
-//                if(mask.get(i, j) == null || mask.get(i, j)[0] == Imgproc.GC_BGD){
-                if(mask.get(i, j)[0] == Imgproc.GC_BGD){
-                    mask.put(i, j, new byte[]{Imgproc.GC_PR_FGD});
+    @Override
+    public void grabCutStarted() {
+        progressDialog.setMessage("Processing Image...");
+        progressDialog.setCancelable(true);
+        progressDialog.setOnCancelListener(new DialogInterface.OnCancelListener() {
+            @Override
+            public void onCancel(DialogInterface dialog) {
+                if (grabCutter != null) {
+                    grabCutter.cancelGrabCut();
                 }
             }
-        }
+        });
+        progressDialog.setIndeterminate(true);
+        progressDialog.show();
 
-        // run the grabCut with 5 iterations
-        Imgproc.grabCut(rgbImage, mask, new Rect(), new Mat(), new Mat(), 5, Imgproc.GC_INIT_WITH_MASK);
-
-        // after mask was changed by the grabCut, black out all image regions that are background or possible background
-        for (int i = 0; i < mask.rows(); i++) {
-            for (int j = 0; j < mask.cols(); j++) {
-
-                if (mask.get(i, j)[0] == Imgproc.GC_BGD || mask.get(i, j)[0] == Imgproc.GC_PR_BGD) {
-                    rgbImage.put(i, j, new byte[]{0, 0, 0});
-                }
-            }
-        }
-
-
-        Log.d(TAG, "applyGrabCut: IMAGE ADDED");
-        return rgbImage;
-
+        openCvCameraView.disableView();
     }
 
-    private class GrabCutTask extends AsyncTask<Mat, Integer, Mat> {
-
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-            progressDialog.setMessage("Processing Image...");
-            progressDialog.setCancelable(false);
-            progressDialog.setIndeterminate(true);
-            progressDialog.show();
-
-            openCvCameraView.disableView();
+    @Override
+    public void grabCutFinished(Bitmap cuttedImage) {
+        if (cuttedImage != null) {
+            // Set into preview
+            previewImgView.setImageBitmap(cuttedImage);
         }
 
-        @Override
-        protected Mat doInBackground(final Mat... params) {
-
-            if(params.length >= 2){
-                Mat frame = params[0];
-                Mat mask = params[1];
-
-                if(frame != null && mask != null && !mask.empty()){
-                    return applyGrabCut(frame, mask);
-                }
-            }
-            return null;
-        }
-
-        @Override
-        protected void onPostExecute(Mat resultImage) {
-            super.onPostExecute(resultImage);
-
-            if(resultImage != null){
-                // Create bitmap
-                Bitmap bitmapOfImage = Bitmap.createBitmap(resultImage.cols(), resultImage.rows(), Bitmap.Config.ARGB_8888);
-                Utils.matToBitmap(resultImage, bitmapOfImage);
-
-                // Set into preview
-                previewImgView.setImageBitmap(bitmapOfImage);
-            }
-
-            progressDialog.dismiss();
-            openCvCameraView.enableView();
-
-        }
+        drawPathView.resetDrawing();
+        progressDialog.dismiss();
+        openCvCameraView.enableView();
     }
 }
 
