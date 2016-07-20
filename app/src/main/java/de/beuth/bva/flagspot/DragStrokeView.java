@@ -14,33 +14,33 @@ import org.opencv.core.Rect;
  * Created by Betty van Aken on 07/07/16.
  */
 
-public class DragRectView extends View {
+public class DragStrokeView extends View {
 
-    private Paint mRectPaint;
+    private Paint mPaint;
 
     private int mStartX = 0;
     private int mStartY = 0;
     private int mEndX = 0;
     private int mEndY = 0;
-    private boolean mDrawRect = false;
+    private boolean mDrawStroke = false;
 
     private OnUpCallback mCallback = null;
 
     public interface OnUpCallback {
-        void onRectFinished(Rect rect);
+        void onStrokeFinished(Rect rect);
     }
 
-    public DragRectView(final Context context) {
+    public DragStrokeView(final Context context) {
         super(context);
         init();
     }
 
-    public DragRectView(final Context context, final AttributeSet attrs) {
+    public DragStrokeView(final Context context, final AttributeSet attrs) {
         super(context, attrs);
         init();
     }
 
-    public DragRectView(final Context context, final AttributeSet attrs, final int defStyle) {
+    public DragStrokeView(final Context context, final AttributeSet attrs, final int defStyle) {
         super(context, attrs, defStyle);
         init();
     }
@@ -59,10 +59,10 @@ public class DragRectView extends View {
      */
     private void init() {
         this.setBackgroundColor(Color.TRANSPARENT);
-        mRectPaint = new Paint();
-        mRectPaint.setColor(Color.RED);
-        mRectPaint.setStyle(Paint.Style.STROKE);
-        mRectPaint.setStrokeWidth(5); // TODO: should take from resources
+        mPaint = new Paint();
+        mPaint.setColor(Color.RED);
+        mPaint.setStyle(Paint.Style.STROKE);
+        mPaint.setStrokeWidth(5); // TODO: should take from resources
     }
 
     @Override
@@ -70,7 +70,7 @@ public class DragRectView extends View {
 
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                mDrawRect = false;
+                mDrawStroke = false;
                 mStartX = (int) event.getX();
                 mStartY = (int) event.getY();
                 invalidate();
@@ -80,22 +80,22 @@ public class DragRectView extends View {
                 final int x = (int) event.getX();
                 final int y = (int) event.getY();
 
-                if (!mDrawRect || Math.abs(x - mEndX) > 5 || Math.abs(y - mEndY) > 5) {
+                if (!mDrawStroke || Math.abs(x - mEndX) > 5 || Math.abs(y - mEndY) > 5) {
                     mEndX = x;
                     mEndY = y;
                     invalidate();
                 }
 
-                mDrawRect = true;
+                mDrawStroke = true;
                 break;
 
             case MotionEvent.ACTION_UP:
                 if (mCallback != null) {
-                    mCallback.onRectFinished(new Rect(Math.min(mStartX, mEndX), Math.min(mStartY, mEndY),
+                    mCallback.onStrokeFinished(new Rect(Math.min(mStartX, mEndX), Math.min(mStartY, mEndY),
                             Math.abs(mStartX - mEndX), Math.abs(mStartY - mEndY)));
                 }
                 invalidate();
-                mDrawRect = false;
+                mDrawStroke = false;
 
                 break;
 
@@ -110,9 +110,9 @@ public class DragRectView extends View {
     protected void onDraw(final Canvas canvas) {
         super.onDraw(canvas);
 
-        if (mDrawRect) {
-            canvas.drawRect(Math.min(mStartX, mEndX), Math.min(mStartY, mEndY),
-                    Math.max(mEndX, mStartX), Math.max(mEndY, mStartY), mRectPaint);
+        if (mDrawStroke) {
+            canvas.drawLine(Math.min(mStartX, mEndX), Math.min(mStartY, mEndY),
+                    Math.max(mEndX, mStartX), Math.max(mEndY, mStartY), mPaint);
         }
     }
 }
