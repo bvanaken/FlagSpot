@@ -16,9 +16,9 @@ public class Country {
     private String subregion;
     private Translations translations;
     private int population;
-    private List<Integer> latlng = new ArrayList<Integer>();
+    private List<Float> latlng = new ArrayList<Float>();
     private String demonym;
-    private int area;
+    private float area;
     private double gini;
     private List<String> timezones = new ArrayList<String>();
     private List<String> borders = new ArrayList<String>();
@@ -146,14 +146,14 @@ public class Country {
     /**
      * @return The latlng
      */
-    public List<Integer> getLatlng() {
+    public List<Float> getLatlng() {
         return latlng;
     }
 
     /**
      * @param latlng The latlng
      */
-    public void setLatlng(List<Integer> latlng) {
+    public void setLatlng(List<Float> latlng) {
         this.latlng = latlng;
     }
 
@@ -174,14 +174,14 @@ public class Country {
     /**
      * @return The area
      */
-    public int getArea() {
+    public float getArea() {
         return area;
     }
 
     /**
      * @param area The area
      */
-    public void setArea(int area) {
+    public void setArea(float area) {
         this.area = area;
     }
 
@@ -332,5 +332,34 @@ public class Country {
     public void setAdditionalProperty(String name, Object value) {
         this.additionalProperties.put(name, value);
     }
+
+    @Override
+    public String toString() {
+        return "Country{" +
+                "name='" + name + '\'' +
+                ", capital='" + capital + '\'' +
+                ", altSpellings=" + altSpellings +
+                ", relevance='" + relevance + '\'' +
+                ", region='" + region + '\'' +
+                ", subregion='" + subregion + '\'' +
+                ", translations=" + translations +
+                ", population=" + population +
+                ", latlng=" + latlng +
+                ", demonym='" + demonym + '\'' +
+                ", area=" + area +
+                ", gini=" + gini +
+                ", timezones=" + timezones +
+                ", borders=" + borders +
+                ", nativeName='" + nativeName + '\'' +
+                ", callingCodes=" + callingCodes +
+                ", topLevelDomain=" + topLevelDomain +
+                ", alpha2Code='" + alpha2Code + '\'' +
+                ", alpha3Code='" + alpha3Code + '\'' +
+                ", currencies=" + currencies +
+                ", languages=" + languages +
+                ", additionalProperties=" + additionalProperties +
+                '}';
+    }
+
 
 }

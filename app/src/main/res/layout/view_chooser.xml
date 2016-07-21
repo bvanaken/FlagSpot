@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:paddingTop="60dp"
+    android:paddingBottom="20dp"
+    android:paddingLeft="20dp"
+    android:paddingRight="20dp">
+
+    <ImageView
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:id="@+id/close_icon"
+        android:layout_alignParentRight="true"
+        android:src="@drawable/tutorial_close"
+        android:background="#50000000" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Please choose a flag"
+        android:id="@+id/title"
+        android:layout_centerHorizontal="true"
+        android:textSize="26sp"
+        android:textColor="#c5c5c5"
+        android:background="#50000000"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp" />
+
+    <ImageView
+        android:layout_width="120dp"
+        android:layout_height="100dp"
+        android:id="@+id/flag_left"
+        android:layout_toLeftOf="@+id/center"
+        android:layout_centerVertical="true"
+        android:layout_marginRight="60dp" />
+
+    <ImageView
+        android:layout_width="120dp"
+        android:layout_height="100dp"
+        android:id="@+id/flag_right"
+        android:layout_centerVertical="true"
+        android:layout_toRightOf="@+id/center"
+        android:layout_marginLeft="60dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Left"
+        android:id="@+id/text_left"
+        android:textSize="20sp"
+        android:textColor="@android:color/white"
+        android:background="#50000000"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp"
+        android:layout_below="@+id/flag_left"
+        android:layout_alignLeft="@+id/flag_left"
+        android:layout_alignRight="@+id/flag_left"
+        android:gravity="center" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Right"
+        android:id="@+id/text_right"
+        android:textSize="20sp"
+        android:textColor="@android:color/white"
+        android:background="#50000000"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp"
+        android:layout_below="@+id/flag_right"
+        android:layout_alignLeft="@+id/flag_right"
+        android:layout_alignRight="@+id/flag_right"
+        android:gravity="center" />
+
+    <Space
+        android:layout_width="20px"
+        android:layout_height="20px"
+        android:id="@+id/center"
+        android:layout_centerInParent="true" />
+
+</RelativeLayout>

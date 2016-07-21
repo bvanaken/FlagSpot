@@ -10,7 +10,10 @@ import org.apache.commons.math3.util.MathArrays;
 
 import java.io.InputStream;
 import java.io.ObjectInputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import de.beuth.bva.flagspot.model.Flag;
 
@@ -26,7 +29,7 @@ public class FlagComparer {
     final static int SAMPLES_X = 40;
     final static int SAMPLES_Y = 40;
 
-    final static int DISTANCE_THRESHOLD = 3000;
+    final static int EXCLUSION_THRESHOLD = 5000;
 
     List<Flag> flags;
 
@@ -36,29 +39,44 @@ public class FlagComparer {
         }
     }
 
-    public String compareFlag(Bitmap flagImg) {
+    public List<String> compareFlag(Bitmap flagImg) {
 
         double[] testVector = getVectorForImage(flagImg, SAMPLES_X, SAMPLES_Y);
         if (testVector != null) {
 
+            List<String> nearestFlags = new ArrayList<>();
+
             double shortestDistance = Double.MAX_VALUE;
             String nearestFlag = null;
+            Map<Integer, Flag> otherNearFlags = new HashMap<>();
 
             for (Flag flag : flags) {
                 double distance = MathArrays.distance(flag.getVector(), testVector);
-                if (distance < shortestDistance) {
+                if (distance < shortestDistance && distance < EXCLUSION_THRESHOLD) {
                     shortestDistance = distance;
                     nearestFlag = flag.getName();
-                }
-                if (distance < DISTANCE_THRESHOLD) {
+
+                } else if (distance < EXCLUSION_THRESHOLD) {
+                    otherNearFlags.put((int) distance, flag);
                     Log.d(TAG, flag.getName() + ": " + distance);
                 }
             }
 
+            nearestFlags.add(nearestFlag);
+
             Log.d(TAG, "-----");
             Log.d(TAG, nearestFlag + ": " + shortestDistance);
 
-            return nearestFlag;
+            double shortestDifference = Double.MAX_VALUE;
+
+            for (Integer distance : otherNearFlags.keySet()) {
+                if (distance - shortestDistance < 500 && distance - shortestDistance < shortestDifference){
+                    nearestFlags.add(otherNearFlags.get(distance).getName());
+                    shortestDifference = distance - shortestDistance;
+                }
+            }
+
+            return nearestFlags;
         }
 
         return null;

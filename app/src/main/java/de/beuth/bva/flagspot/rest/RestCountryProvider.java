@@ -3,6 +3,8 @@ package de.beuth.bva.flagspot.rest;
 import android.content.Context;
 import android.util.Log;
 
+import java.util.List;
+
 import de.beuth.bva.flagspot.R;
 import de.beuth.bva.flagspot.model.Country;
 import retrofit2.Call;
@@ -19,8 +21,11 @@ public class RestCountryProvider {
     private static final String TAG = "RestCountryProvider";
 
     Retrofit retrofit;
+    RestCountryListener listener;
 
-    public RestCountryProvider(Context context) {
+    public RestCountryProvider(Context context, RestCountryListener lst) {
+
+        listener = lst;
 
         // Setting up retrofit with base url
         retrofit = new Retrofit.Builder()
@@ -33,26 +38,41 @@ public class RestCountryProvider {
 
         RestCountryInterface apiService = retrofit.create(RestCountryInterface.class);
 
-        Call<Country> call = apiService.getCountry(name);
-        call.enqueue(new Callback<Country>() {
+        Call<List<Country>> call = apiService.getCountry(name);
+        call.enqueue(new Callback<List<Country>>() {
 
             @Override
-            public void onResponse(Call<Country> call, Response<Country> response) {
+            public void onResponse(Call<List<Country>> call, Response<List<Country>> response) {
 
                 int statusCode = response.code();
-                Country countryObject = response.body();
+                List<Country> countryList = response.body();
 
-                Log.d(TAG, "onResponse: " + countryObject.toString());
+                if (countryList != null) {
+                    for (Country country : countryList) {
+                        Log.d(TAG, "onResponse: " + country.toString());
+                    }
+
+                    if (listener != null && !countryList.isEmpty()) {
+                        listener.onCountryResponse(countryList.get(0));
+                    }
+                }
             }
 
             @Override
-            public void onFailure(Call<Country> call, Throwable t) {
-
-                Log.d(TAG, "onFailure: Country informations could not be retrieved.");
+            public void onFailure(Call<List<Country>> call, Throwable t) {
+                t.printStackTrace();
+                if (listener != null) {
+                    listener.onFailure();
+                }
             }
 
         });
+    }
 
+    public interface RestCountryListener {
+        void onCountryResponse(Country country);
+
+        void onFailure();
     }
 
 }

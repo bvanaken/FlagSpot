@@ -28,13 +28,18 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
+import java.util.List;
+
 import de.beuth.bva.flagspot.flaglogic.FlagComparer;
 import de.beuth.bva.flagspot.imgprocessing.GrabCutter;
+import de.beuth.bva.flagspot.model.Country;
 import de.beuth.bva.flagspot.rest.RestCountryProvider;
+import de.beuth.bva.flagspot.views.ChooserView;
 import de.beuth.bva.flagspot.views.DrawPathView;
 import de.beuth.bva.flagspot.views.DrawRectView;
+import de.beuth.bva.flagspot.views.InfoView;
 
-public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener, GrabCutter.GrabCutListener {
+public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener, GrabCutter.GrabCutListener, RestCountryProvider.RestCountryListener, ChooserView.ChooserViewListener {
 
     private static final String TAG = "MainActivity";
 
@@ -48,13 +53,20 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private DrawRectView drawRectView;
     private DrawPathView drawPathView;
 
+    private InfoView infoView;
+
     ProgressDialog progressDialog;
     boolean inRectMode = true;
+    boolean inChooseMode = false;
 
     private FlagComparer flagComparer;
     private GrabCutter grabCutter;
     private Mat currentFrame;
     private Mat selectedRegion;
+
+    ChooserView chooserView;
+    private Country countryLeft;
+    private Country countryRight;
 
     private RestCountryProvider restCountryProvider;
 
@@ -92,7 +104,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         flagComparer = new FlagComparer(this);
 
         // setup REST provider for country informations
-        restCountryProvider = new RestCountryProvider(this);
+        restCountryProvider = new RestCountryProvider(this, this);
 
         setupViews();
     }
@@ -192,9 +204,10 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         // Setup Text view
         countryNameTextView = new TextView(this);
         countryNameTextView.setId(R.id.countryname_textview);
-        countryNameTextView.setTextColor(Color.RED);
+        countryNameTextView.setTextColor(Color.BLUE);
 
         RelativeLayout.LayoutParams textParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT);
+        textParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
         layout.addView(countryNameTextView, textParams);
 
         // Setup Image view
@@ -260,6 +273,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 toggleSelectionMode();
             }
         });
+
+        // Add infoview
+        infoView = new InfoView(this);
+        RelativeLayout.LayoutParams infoViewParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT);
+        layout.addView(infoView, infoViewParams);
+        infoView.setVisibility(View.GONE);
     }
 
     private void toggleSelectionMode() {
@@ -267,6 +286,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         // Remove text views
         layout.removeView(toggleTextView);
         layout.removeView(titleTextView);
+        layout.removeView(infoView);
 
         // Change between rect or path view
         if (inRectMode) {
@@ -274,6 +294,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             RelativeLayout.LayoutParams drawPathParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT);
             layout.addView(drawPathView, drawPathParams);
             toggleTextView.setText("GrabCut Mode");
+            inChooseMode = false;
         } else {
 
             // be sure the grabcut task is not running anymore
@@ -294,10 +315,16 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         toggleParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
         layout.addView(toggleTextView, toggleParams);
 
+        RelativeLayout.LayoutParams infoViewParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT);
+        layout.addView(infoView, infoViewParams);
+        infoView.setVisibility(View.GONE);
+
         inRectMode = !inRectMode;
     }
 
     private void onRegionSelected(Rect rect) {
+        closeChooserView();
+
         if (currentFrame != null && rect.width > 30 && rect.height > 30) {
             // Cut out rectangle from input Mat
             Mat newlySelectedRegion = currentFrame.submat(rect);
@@ -336,27 +363,74 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             Utils.matToBitmap(rgbImage, bitmapOfImage);
 
             // Set into preview
-            previewImgView.setImageBitmap(bitmapOfImage);
+            infoView.setFlag(bitmapOfImage);
 
             // Calculate flag match
-            String nearest = flagComparer.compareFlag(bitmapOfImage);
+            List<String> nearest = flagComparer.compareFlag(bitmapOfImage);
 
-            // Display nearest match
-            if (nearest != null) {
-                countryNameTextView.setText(nearest);
+            // Display nearest match or matches
+            if (nearest != null && !nearest.isEmpty() && nearest.get(0) != null) {
+
+                if (nearest.size() == 1) {
+                    countryNameTextView.setText(nearest.get(0));
+                    fetchCountryInformation(nearest.get(0));
+
+                } else if (nearest.size() > 1) {
+                    String text = "";
+                    for (String name : nearest) {
+                        text += " " + name + " ";
+                    }
+                    countryNameTextView.setText(text);
+
+                    inChooseMode = true;
+                    fetchCountryInformation(nearest.get(0));
+                    fetchCountryInformation(nearest.get(1));
+
+                }
+
+
+                countryNameTextView.setText("");
+
+            } else {
+                countryNameTextView.setText("Try again");
             }
         }
 
     }
 
+    private void openChooserView() {
+        if (countryLeft != null && countryRight != null) {
+            chooserView = new ChooserView(this, this, countryLeft, countryRight);
+
+            RelativeLayout.LayoutParams chooserViewParams = new RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT);
+            layout.addView(chooserView, chooserViewParams);
+        }
+    }
+
+    private void closeChooserView() {
+        inChooseMode = false;
+        countryLeft = null;
+        countryRight = null;
+        layout.removeView(chooserView);
+    }
+
+    private void fetchCountryInformation(String name) {
+
+        if (name.startsWith("the_")) {
+            name = name.substring(4);
+        }
+
+        name = name.replace("_", " ");
+
+        Log.d(TAG, "fetchCountryInformation: " + name);
+
+        restCountryProvider.getCountryByName(name);
+    }
+
     private Mat displayLines(Mat sampledImage) {
 
-        Mat resizeimage = new Mat();
-        Size sz = new Size(600, 400);
-        Imgproc.resize(sampledImage, resizeimage, sz);
-
         Mat binaryImage = new Mat();
-        Imgproc.cvtColor(resizeimage, binaryImage, Imgproc.COLOR_RGB2GRAY);
+        Imgproc.cvtColor(sampledImage, binaryImage, Imgproc.COLOR_RGB2GRAY);
 
         Size size = new Size(5, 5);
 //        Imgproc.GaussianBlur(binaryImage, binaryImage, size, 0);
@@ -382,6 +456,11 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
         return binaryImage;
 
+    }
+
+    private void displayCountry(Country country) {
+        infoView.resetCountry(country);
+        infoView.setVisibility(View.VISIBLE);
     }
 
     // GRABCUT Callbacks
@@ -414,6 +493,43 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         drawPathView.resetDrawing();
         progressDialog.dismiss();
         openCvCameraView.enableView();
+    }
+
+    // REST Callbacks
+
+    @Override
+    public void onCountryResponse(Country country) {
+
+        if (inChooseMode) {
+            if (countryLeft == null) {
+                countryLeft = country;
+            } else if (countryRight == null) {
+                countryRight = country;
+                openChooserView();
+            }
+        } else {
+            displayCountry(country);
+        }
+    }
+
+    @Override
+    public void onFailure() {
+        inChooseMode = false;
+        countryLeft = null;
+        countryRight = null;
+    }
+
+    // ChooseView Callbacks
+
+    @Override
+    public void onChosenCountry(Country country) {
+        closeChooserView();
+        displayCountry(country);
+    }
+
+    @Override
+    public void onClosePressed() {
+        closeChooserView();
     }
 }
 
